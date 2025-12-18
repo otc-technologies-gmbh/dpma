@@ -90,7 +90,8 @@ curl -X POST http://localhost:3000/api/trademark/register \
       { "classNumber": 9 },
       { "classNumber": 42 }
     ],
-    "paymentMethod": "UEBERWEISUNG"
+    "paymentMethod": "UEBERWEISUNG",
+    "senderName": "Max Mustermann"
   }'
 ```
 
@@ -125,7 +126,8 @@ curl -X POST http://localhost:3000/api/trademark/register \
     "niceClasses": [
       { "classNumber": 35 }
     ],
-    "paymentMethod": "UEBERWEISUNG"
+    "paymentMethod": "UEBERWEISUNG",
+    "senderName": "Muster GmbH"
   }'
 ```
 
@@ -144,6 +146,8 @@ curl -X POST http://localhost:3000/api/trademark/register \
 | `paymentMethod` | string | Yes | `"UEBERWEISUNG"` (bank transfer) or `"SEPA_LASTSCHRIFT"` |
 | `sepaDetails` | object | Conditional | Required if paymentMethod is `"SEPA_LASTSCHRIFT"` |
 | `options` | object | No | Additional options (see below) |
+| `senderName` | string | Yes | Name of sender for final submission (typically applicant name) |
+| `deliveryAddress` | object | No | Alternative delivery address (see below) |
 | `internalReference` | string | No | Your internal reference number |
 
 ### Applicant Object
@@ -179,6 +183,19 @@ curl -X POST http://localhost:3000/api/trademark/register \
 | `addressLine1` | string | No | Additional address line |
 | `addressLine2` | string | No | Additional address line |
 
+### Delivery Address Object (Optional)
+
+Use this if you want official correspondence sent to a different address than the applicant's address.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `street` | string | Yes | Street name |
+| `houseNumber` | string | Yes | House/building number |
+| `zip` | string | Yes | Postal code |
+| `city` | string | Yes | City name |
+| `country` | string | Yes | ISO 3166-1 alpha-2 code |
+| `recipientName` | string | No | Name of recipient if different from applicant |
+
 ### Sanctions Object
 
 | Field | Type | Required | Description |
@@ -192,10 +209,12 @@ curl -X POST http://localhost:3000/api/trademark/register \
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `type` | string | Yes | `"word"`, `"figurative"`, or `"combined"` |
-| `text` | string | Conditional | Required for `"word"` and `"combined"` types |
+| `text` | string | Conditional | Required for `"word"` type only |
 | `imageData` | Buffer | Conditional | Required for `"figurative"` and `"combined"` types |
-| `imageMimeType` | string | Conditional | MIME type of image (e.g., `"image/png"`) |
+| `imageMimeType` | string | Conditional | MIME type of image (e.g., `"image/png"`, `"image/jpeg"`) |
 | `imageFileName` | string | Conditional | Original filename of image |
+
+**Note**: For `"combined"` marks, only `imageData` is required. The text is embedded within the image itself. For `"figurative"` marks, only the image is used (no text).
 
 ### Nice Classes Array
 
@@ -204,7 +223,27 @@ Each element in the array:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `classNumber` | number | Yes | Class number (1-45) |
-| `terms` | string[] | No | Specific terms within the class |
+| `terms` | string[] | No | Specific terms within the class (see below) |
+| `selectClassHeader` | boolean | No | If true, selects the entire class header/category instead of individual terms |
+
+#### Term Selection
+
+You can specify terms in two ways:
+
+1. **Select entire class header** (all terms in a category):
+   ```json
+   { "classNumber": 9, "selectClassHeader": true }
+   ```
+
+2. **Select specific individual terms**:
+   ```json
+   {
+     "classNumber": 9,
+     "terms": ["Computer", "Computersoftware", "Herunterladbare Computerprogramme"]
+   }
+   ```
+
+3. **Default behavior** (no terms specified): Selects the first available term group in the class.
 
 ### Options Object (Optional)
 
@@ -341,6 +380,7 @@ The Nice Classification divides goods and services into 45 classes:
 dpma/
 ├── src/
 │   ├── index.ts              # Application entry point
+│   ├── comprehensive-test.ts # Test suite for all scenarios
 │   ├── api/
 │   │   └── server.ts         # Express server & routes
 │   ├── client/
@@ -374,9 +414,47 @@ dpma/
 
 4. **Debug Mode**: When `DEBUG=true`, detailed logs are output and response XMLs are saved to the `debug/` folder for troubleshooting.
 
-5. **Nice Classes**: The API currently selects the first available term group for each Nice class. For specific term selection within classes, additional development may be needed.
+5. **Nice Classes**: The API supports three modes for Nice class term selection: selecting the entire class header, selecting specific individual terms by name, or defaulting to the first available term group. See the Nice Classes Array section for details.
 
-6. **Image Trademarks**: File upload for figurative/combined marks is partially implemented. Word marks (`type: "word"`) are fully supported.
+6. **Image Trademarks**: All trademark types are fully supported: word marks (`type: "word"`), figurative/image marks (`type: "figurative"`), and combined marks (`type: "combined"`).
+
+## Testing
+
+The project includes a comprehensive test suite that covers various registration scenarios.
+
+```bash
+# List all available test scenarios
+npx ts-node src/comprehensive-test.ts --list
+
+# Run validation tests only (no DPMA connection)
+npx ts-node src/comprehensive-test.ts --validate-only
+
+# Test invalid request detection
+npx ts-node src/comprehensive-test.ts --invalid
+
+# Run dry-run test (connects to DPMA, stops before final submission)
+npx ts-node src/comprehensive-test.ts --dry-run --scenario 1
+```
+
+### Test Modes
+
+| Mode | Description |
+|------|-------------|
+| `--validate-only` | Validates all test scenarios without connecting to DPMA |
+| `--invalid` | Tests that invalid requests are properly rejected |
+| `--dry-run` | Connects to DPMA and runs through steps 1-7, but stops before final submission |
+| `--list` | Lists all available test scenarios |
+
+### Test Scenarios
+
+The test suite includes 12 scenarios covering:
+- Natural persons and legal entities
+- Word marks, image marks, and combined marks
+- Nice class term selection
+- Accelerated examination option
+- Delivery addresses
+- Representatives
+- International applicants (Austria, Switzerland)
 
 ## Development
 

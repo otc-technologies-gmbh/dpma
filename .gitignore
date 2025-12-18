@@ -4,7 +4,7 @@ node_modules/
 # Build output
 dist/
 
-debug/*
+debug/
 
 # Debug files
 debug_*.xml
