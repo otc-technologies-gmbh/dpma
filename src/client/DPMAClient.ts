@@ -225,7 +225,7 @@ export class DPMAClient {
   }
 
   /**
-   * Create multipart form data with standard AJAX fields
+   * Create multipart form data with standard AJAX fields (for file uploads)
    */
   private createFormData(fields: Record<string, string>): FormData {
     const form = new FormData();
@@ -236,6 +236,17 @@ export class DPMAClient {
     }
 
     return form;
+  }
+
+  /**
+   * Create URL-encoded body for form submissions (properly handles UTF-8)
+   */
+  private createUrlEncodedBody(fields: Record<string, string>): string {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(fields)) {
+      params.append(key, value);
+    }
+    return params.toString();
   }
 
   /**
@@ -273,15 +284,15 @@ export class DPMAClient {
     dpmaViewId: string
   ): Promise<string> {
     const allFields = this.addNavigationFields(fields, dpmaViewId);
-    const form = this.createFormData(allFields);
+    const body = this.createUrlEncodedBody(allFields);
 
     const url = this.buildFormUrl();
     this.log(`Submitting step to ${url} with dpmaViewId=${dpmaViewId}`);
 
-    const response = await this.client.post(url, form, {
+    const response = await this.client.post(url, body, {
       headers: {
         ...AJAX_HEADERS,
-        ...form.getHeaders(),
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'Referer': `${BASE_URL}${url}`,
       },
     });
@@ -650,13 +661,13 @@ export class DPMAClient {
       ...additionalFields,
     };
 
-    const form = this.createFormData(fields);
+    const body = this.createUrlEncodedBody(fields);
     const url = this.buildFormUrl();
 
-    const response = await this.client.post(url, form, {
+    const response = await this.client.post(url, body, {
       headers: {
         ...AJAX_HEADERS,
-        ...form.getHeaders(),
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'Referer': `${BASE_URL}${url}`,
       },
     });
@@ -769,13 +780,13 @@ export class DPMAClient {
       'primefaces.nonce': this.session.tokens.primefacesNonce,
     };
 
-    const form = this.createFormData(fields);
+    const body = this.createUrlEncodedBody(fields);
     const url = this.buildFormUrl();
 
-    const response = await this.client.post(url, form, {
+    const response = await this.client.post(url, body, {
       headers: {
         ...AJAX_HEADERS,
-        ...form.getHeaders(),
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'Referer': `${BASE_URL}${url}`,
       },
     });
@@ -910,12 +921,12 @@ export class DPMAClient {
       'primefaces.nonce': this.session.tokens.primefacesNonce,
     };
 
-    const form = this.createFormData(expandFields);
+    const body = this.createUrlEncodedBody(expandFields);
 
-    const response = await this.client.post(url, form, {
+    const response = await this.client.post(url, body, {
       headers: {
         ...AJAX_HEADERS,
-        ...form.getHeaders(),
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'Referer': `${BASE_URL}${url}`,
       },
     });
@@ -1166,7 +1177,7 @@ export class DPMAClient {
       'primefaces.nonce': this.session.tokens.primefacesNonce,
     };
 
-    const form = this.createFormData(allFields);
+    const body = this.createUrlEncodedBody(allFields);
     const url = this.buildFormUrl();
 
     this.log('Sending final submission...');
@@ -1174,10 +1185,10 @@ export class DPMAClient {
     // This request will redirect to the Versand service
     // Note: With maxRedirects: 0 and validateStatus accepting 302,
     // the redirect will be returned as a normal response, NOT thrown as error
-    const response = await this.client.post(url, form, {
+    const response = await this.client.post(url, body, {
       headers: {
         ...AJAX_HEADERS,
-        ...form.getHeaders(),
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'Referer': `${BASE_URL}${url}`,
       },
       maxRedirects: 0,
@@ -1285,9 +1296,12 @@ export class DPMAClient {
   }
 
   /**
-   * Download the receipt documents
+   * Download the receipt documents (returns raw ZIP and extracted documents)
    */
-  async downloadDocuments(encryptedTransactionId: string): Promise<DownloadedDocument[]> {
+  async downloadDocuments(encryptedTransactionId: string): Promise<{
+    zipData: Buffer;
+    documents: DownloadedDocument[];
+  }> {
     this.log('Downloading receipt documents...');
 
     const downloadUrl = `${VERSAND_PATH}/versand/anlagen?encryptedTransactionId=${encodeURIComponent(encryptedTransactionId)}`;
@@ -1299,11 +1313,12 @@ export class DPMAClient {
       responseType: 'arraybuffer',
     });
 
+    const zipData = Buffer.from(response.data);
     const documents: DownloadedDocument[] = [];
 
-    // The response is a ZIP file
+    // Extract individual files from the ZIP for API response
     try {
-      const zip = new AdmZip(Buffer.from(response.data));
+      const zip = new AdmZip(zipData);
       const entries = zip.getEntries();
 
       for (const entry of entries) {
@@ -1317,15 +1332,24 @@ export class DPMAClient {
         }
       }
     } catch (error) {
-      this.log('Failed to extract ZIP, treating as single file');
-      documents.push({
-        filename: 'receipt.pdf',
-        data: Buffer.from(response.data),
-        mimeType: 'application/pdf',
-      });
+      this.log('Failed to extract ZIP contents');
     }
 
-    return documents;
+    return { zipData, documents };
+  }
+
+  /**
+   * Save the complete ZIP file to the receipts folder
+   */
+  saveReceiptZip(aktenzeichen: string, zipData: Buffer): string {
+    const fs = require('fs');
+    this.ensureDir(this.receiptsDir);
+    const safeAkz = aktenzeichen.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filename = `${safeAkz}_documents.zip`;
+    const filepath = `${this.receiptsDir}/${filename}`;
+    fs.writeFileSync(filepath, zipData);
+    this.log(`Saved ZIP archive: ${filepath}`);
+    return filepath;
   }
 
   /**
@@ -1363,14 +1387,14 @@ export class DPMAClient {
       // Complete via Versand service
       const versandResponse = await this.completeVersand(encryptedTransactionId);
 
-      // Download documents
-      const documents = await this.downloadDocuments(encryptedTransactionId);
+      // Download documents (ZIP archive)
+      const { zipData, documents } = await this.downloadDocuments(encryptedTransactionId);
 
-      // Save receipt to dedicated folder
+      // Save the complete ZIP archive to dedicated folder
       let receiptFilePath: string | undefined;
-      if (documents.length > 0) {
-        receiptFilePath = this.saveReceipt(versandResponse.akz, documents[0]);
-        this.log(`Receipt saved to: ${receiptFilePath}`);
+      if (zipData.length > 0) {
+        receiptFilePath = this.saveReceiptZip(versandResponse.akz, zipData);
+        this.log(`ZIP archive saved to: ${receiptFilePath}`);
       }
 
       // Build success response
@@ -1398,8 +1422,8 @@ export class DPMAClient {
             reference: versandResponse.akz,
           } : undefined,
         },
-        receiptDocument: documents[0],
-        receiptFilePath,
+        receiptDocuments: documents, // All extracted documents
+        receiptFilePath, // Path to saved ZIP file
       };
 
     } catch (error: any) {

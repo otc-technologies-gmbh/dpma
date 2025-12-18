@@ -225,10 +225,10 @@ export interface TrademarkRegistrationSuccess {
   /** Payment details */
   payment: PaymentInfo;
 
-  /** Downloaded receipt document */
-  receiptDocument?: DownloadedDocument;
+  /** All downloaded receipt documents (extracted from ZIP) */
+  receiptDocuments?: DownloadedDocument[];
 
-  /** File path where receipt was saved */
+  /** File path where ZIP archive was saved */
   receiptFilePath?: string;
 }
 

@@ -140,11 +140,12 @@ export function createServer(options: { debug?: boolean } = {}): express.Applica
       if (result.success) {
         const successResult = result as TrademarkRegistrationSuccess;
 
-        // Convert receipt document to base64 for JSON response
-        let receiptBase64: string | undefined;
-        if (successResult.receiptDocument) {
-          receiptBase64 = successResult.receiptDocument.data.toString('base64');
-        }
+        // Convert all receipt documents to base64 for JSON response
+        const documents = successResult.receiptDocuments?.map(doc => ({
+          filename: doc.filename,
+          mimeType: doc.mimeType,
+          dataBase64: doc.data.toString('base64'),
+        })) || [];
 
         const response: ApiResponse<object> = {
           success: true,
@@ -157,12 +158,8 @@ export function createServer(options: { debug?: boolean } = {}): express.Applica
             submissionTime: successResult.submissionTime,
             fees: successResult.fees,
             payment: successResult.payment,
-            receipt: receiptBase64 ? {
-              filename: successResult.receiptDocument?.filename,
-              mimeType: successResult.receiptDocument?.mimeType,
-              dataBase64: receiptBase64,
-            } : undefined,
-            receiptFilePath: successResult.receiptFilePath,
+            documents, // All documents from the ZIP
+            receiptFilePath: successResult.receiptFilePath, // Path to saved ZIP
           },
         };
 
