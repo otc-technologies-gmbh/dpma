@@ -8,9 +8,9 @@ This API automates the complete trademark registration process with the German P
 
 - Session management and CSRF token handling
 - Multi-step form submission (8 steps)
-- Nice classification selection
+- Nice classification selection with specific term support
 - Payment method configuration
-- Receipt document download
+- Receipt document download (ZIP archive)
 
 ## Quick Start
 
@@ -41,8 +41,14 @@ Returns server status.
 **Response:**
 ```json
 {
-  "status": "ok",
-  "timestamp": "2025-12-18T12:00:00.000Z"
+  "success": true,
+  "requestId": "uuid",
+  "timestamp": "2025-12-19T12:00:00.000Z",
+  "data": {
+    "status": "healthy",
+    "version": "1.0.0",
+    "uptime": 3600
+  }
 }
 ```
 
@@ -69,8 +75,7 @@ curl -X POST http://localhost:3000/api/trademark/register \
       "firstName": "Max",
       "lastName": "Mustermann",
       "address": {
-        "street": "Musterstraße",
-        "houseNumber": "123",
+        "street": "Musterstraße 123",
         "zip": "80331",
         "city": "München",
         "country": "DE"
@@ -78,7 +83,6 @@ curl -X POST http://localhost:3000/api/trademark/register \
     },
     "email": "max@example.com",
     "sanctions": {
-      "declaration": "NONE",
       "hasRussianNationality": false,
       "hasRussianResidence": false
     },
@@ -106,8 +110,7 @@ curl -X POST http://localhost:3000/api/trademark/register \
       "companyName": "Muster GmbH",
       "legalForm": "GmbH",
       "address": {
-        "street": "Industriestraße",
-        "houseNumber": "45",
+        "street": "Industriestraße 45",
         "zip": "10115",
         "city": "Berlin",
         "country": "DE"
@@ -115,7 +118,6 @@ curl -X POST http://localhost:3000/api/trademark/register \
     },
     "email": "legal@muster-gmbh.de",
     "sanctions": {
-      "declaration": "NONE",
       "hasRussianNationality": false,
       "hasRussianResidence": false
     },
@@ -131,23 +133,81 @@ curl -X POST http://localhost:3000/api/trademark/register \
   }'
 ```
 
+### Example with Nice Class Terms (Sub-Classes)
+
+```bash
+curl -X POST http://localhost:3000/api/trademark/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "applicant": {
+      "type": "legal",
+      "companyName": "Tech Startup GmbH",
+      "legalForm": "GmbH",
+      "address": {
+        "street": "Innovationsweg 1",
+        "zip": "80331",
+        "city": "München",
+        "country": "DE"
+      }
+    },
+    "email": "info@techstartup.de",
+    "sanctions": {
+      "hasRussianNationality": false,
+      "hasRussianResidence": false
+    },
+    "trademark": {
+      "type": "word",
+      "text": "TechBrand2024"
+    },
+    "niceClasses": [
+      {
+        "classNumber": 9,
+        "terms": ["Anwendungssoftware", "Spielsoftware", "Betriebssysteme"]
+      },
+      {
+        "classNumber": 42,
+        "terms": ["IT-Dienstleistungen", "Entwicklung, Programmierung und Implementierung von Software"]
+      }
+    ],
+    "leadClass": 9,
+    "paymentMethod": "UEBERWEISUNG",
+    "senderName": "Tech Startup GmbH"
+  }'
+```
+
 ## Request Schema
+
+### JSON Structure to Form Steps Mapping
+
+The JSON request maps to the 8 DPMA form steps as follows:
+
+| Step | DPMA Form | JSON Fields |
+|------|-----------|-------------|
+| 1 | Anmelder (Applicant) | `applicant`, `sanctions` |
+| 2 | Anwalt/Kanzlei (Lawyer) | `representatives` (optional, skipped if empty) |
+| 3 | Zustelladresse (Delivery) | `email`, `deliveryAddress` (optional) |
+| 4 | Marke (Trademark) | `trademark` |
+| 5 | Waren/Dienstleistungen | `niceClasses`, `leadClass` |
+| 6 | Sonstiges (Options) | `options` |
+| 7 | Zahlung (Payment) | `paymentMethod`, `sepaDetails` |
+| 8 | Zusammenfassung (Submit) | `senderName` |
 
 ### Root Object
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `applicant` | object | Yes | Applicant information (see below) |
-| `email` | string | Yes | Contact email for correspondence |
 | `sanctions` | object | Yes | EU sanctions declaration (see below) |
+| `email` | string | Yes | Contact email for correspondence |
 | `trademark` | object | Yes | Trademark details (see below) |
 | `niceClasses` | array | Yes | At least one Nice class (see below) |
 | `leadClass` | number | No | Lead class number (defaults to first class) |
-| `paymentMethod` | string | Yes | `"UEBERWEISUNG"` (bank transfer) or `"SEPA_LASTSCHRIFT"` |
-| `sepaDetails` | object | Conditional | Required if paymentMethod is `"SEPA_LASTSCHRIFT"` |
+| `paymentMethod` | string | Yes | `"UEBERWEISUNG"` (bank transfer) or `"SEPASDD"` (SEPA) |
+| `sepaDetails` | object | Conditional | Required if paymentMethod is `"SEPASDD"` |
+| `senderName` | string | Yes | Name of sender for final submission |
+| `representatives` | array | No | Legal representative(s) |
+| `deliveryAddress` | object | No | Alternative delivery address |
 | `options` | object | No | Additional options (see below) |
-| `senderName` | string | Yes | Name of sender for final submission (typically applicant name) |
-| `deliveryAddress` | object | No | Alternative delivery address (see below) |
 | `internalReference` | string | No | Your internal reference number |
 
 ### Applicant Object
@@ -157,9 +217,10 @@ curl -X POST http://localhost:3000/api/trademark/register \
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `type` | string | Yes | Must be `"natural"` |
-| `salutation` | string | No | `"Herr"`, `"Frau"`, or empty |
+| `salutation` | string | No | `"Herr"`, `"Frau"`, or title |
 | `firstName` | string | Yes | First name |
 | `lastName` | string | Yes | Last name |
+| `nameSuffix` | string | No | Name suffix (optional) |
 | `address` | object | Yes | Address object (see below) |
 
 #### Legal Entity (`type: "legal"`)
@@ -168,20 +229,40 @@ curl -X POST http://localhost:3000/api/trademark/register \
 |-------|------|----------|-------------|
 | `type` | string | Yes | Must be `"legal"` |
 | `companyName` | string | Yes | Company name |
-| `legalForm` | string | No | Legal form (GmbH, AG, etc.) |
+| `legalForm` | string | No | Legal form (GmbH, AG, UG, etc.) |
 | `address` | object | Yes | Address object (see below) |
+
+**Supported Legal Forms:**
+- `GmbH` - Gesellschaft mit beschränkter Haftung
+- `AG` - Aktiengesellschaft
+- `UG` - Unternehmergesellschaft, haftungsbeschränkt
+- `KG` - Kommanditgesellschaft
+- `OHG` / `oHG` - Offene Handelsgesellschaft
+- `GbR` - Gesellschaft bürgerlichen Rechts
+- `eG` - eingetragene Genossenschaft
+- `eV` / `e.V.` - eingetragener Verein
+- `SE` - europäische Gesellschaft
+- `KGaA` - Kommanditgesellschaft auf Aktien
+- `PartG` - Partnerschaftsgesellschaft
+- `PartGmbB` - Partnerschaftsgesellschaft mit beschränkter Berufshaftung
 
 ### Address Object
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `street` | string | Yes | Street name |
-| `houseNumber` | string | Yes | House/building number |
+| `street` | string | Yes | Street name with house number (e.g., "Musterstraße 123") |
+| `addressLine1` | string | No | Additional address line |
+| `addressLine2` | string | No | Additional address line 2 |
 | `zip` | string | Yes | Postal code (5 digits for Germany) |
 | `city` | string | Yes | City name |
 | `country` | string | Yes | ISO 3166-1 alpha-2 code (e.g., `"DE"`, `"AT"`, `"CH"`) |
-| `addressLine1` | string | No | Additional address line |
-| `addressLine2` | string | No | Additional address line |
+
+### Sanctions Declaration Object
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `hasRussianNationality` | boolean | Yes | Must be `false` to proceed |
+| `hasRussianResidence` | boolean | Yes | Must be `false` to proceed |
 
 ### Delivery Address Object (Optional)
 
@@ -189,32 +270,37 @@ Use this if you want official correspondence sent to a different address than th
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `street` | string | Yes | Street name |
-| `houseNumber` | string | Yes | House/building number |
-| `zip` | string | Yes | Postal code |
-| `city` | string | Yes | City name |
-| `country` | string | Yes | ISO 3166-1 alpha-2 code |
-| `recipientName` | string | No | Name of recipient if different from applicant |
-
-### Sanctions Object
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `declaration` | string | No | `"NONE"` (default) |
-| `hasRussianNationality` | boolean | Yes | Must be `false` to proceed |
-| `hasRussianResidence` | boolean | Yes | Must be `false` to proceed |
+| `copyFromApplicant` | boolean | No | If true, copies address from applicant |
+| `type` | string | Yes | `"natural"` or `"legal"` |
+| `lastName` | string | Yes | Last name (or company name for legal) |
+| `firstName` | string | No | First name (for natural persons) |
+| `salutation` | string | No | Title/salutation |
+| `companyName` | string | No | Company name (for legal entities) |
+| `legalForm` | string | No | Legal form (for legal entities) |
+| `address` | object | Yes | Address object |
+| `contact` | object | Yes | Contact info with `email` (required) and optional `telephone`, `fax` |
 
 ### Trademark Object
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | string | Yes | `"word"`, `"figurative"`, or `"combined"` |
-| `text` | string | Conditional | Required for `"word"` type only |
-| `imageData` | Buffer | Conditional | Required for `"figurative"` and `"combined"` types |
-| `imageMimeType` | string | Conditional | MIME type of image (e.g., `"image/png"`, `"image/jpeg"`) |
-| `imageFileName` | string | Conditional | Original filename of image |
+| `type` | string | Yes | Trademark type (see below) |
+| `text` | string | Conditional | Required for `"word"` type |
+| `imageData` | Buffer | Conditional | Required for `"figurative"` and `"combined"` |
+| `imageMimeType` | string | Conditional | MIME type (e.g., `"image/jpeg"`) |
+| `imageFileName` | string | Conditional | Original filename |
+| `colorElements` | string[] | No | Color elements in the trademark |
+| `hasNonLatinCharacters` | boolean | No | Contains non-Latin characters |
+| `description` | string | No | Trademark description |
 
-**Note**: For `"combined"` marks, only `imageData` is required. The text is embedded within the image itself. For `"figurative"` marks, only the image is used (no text).
+**Supported Trademark Types:**
+| Type | Value | Description |
+|------|-------|-------------|
+| Word Mark | `"word"` | Text-only trademark (Wortmarke) |
+| Image Mark | `"figurative"` | Image-only trademark (Bildmarke) |
+| Combined Mark | `"combined"` | Word/image combination (Wort-/Bildmarke) |
+
+**Note:** For `"combined"` marks, only `imageData` is required. The text is embedded within the image itself.
 
 ### Nice Classes Array
 
@@ -223,44 +309,61 @@ Each element in the array:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `classNumber` | number | Yes | Class number (1-45) |
-| `terms` | string[] | No | Specific terms within the class (see below) |
-| `selectClassHeader` | boolean | No | If true, selects the entire class header/category instead of individual terms |
+| `terms` | string[] | No | Specific German terms within the class |
+| `selectClassHeader` | boolean | No | If true, selects the entire class header |
 
-#### Term Selection
-
-You can specify terms in two ways:
+#### Term Selection Modes
 
 1. **Select entire class header** (all terms in a category):
    ```json
    { "classNumber": 9, "selectClassHeader": true }
    ```
 
-2. **Select specific individual terms**:
+2. **Select specific individual terms** (using exact DPMA German names):
    ```json
    {
      "classNumber": 9,
-     "terms": ["Computer", "Computersoftware", "Herunterladbare Computerprogramme"]
+     "terms": ["Anwendungssoftware", "Spielsoftware", "Betriebssysteme"]
    }
    ```
 
-3. **Default behavior** (no terms specified): Selects the first available term group in the class.
+3. **Default behavior** (no terms specified): Selects the class header.
+
+#### Common DPMA Term Names
+
+**Class 9 (Software/Electronics):**
+- `Anwendungssoftware` - Application software
+- `Spielsoftware` - Game software
+- `Betriebssysteme` - Operating systems
+- `Künstliche Intelligenz-Software und maschinelle Lernsoftware` - AI/ML software
+
+**Class 35 (Business):**
+- `Werbung, Marketing und Verkaufsförderung` - Advertising, marketing
+
+**Class 42 (IT Services):**
+- `IT-Dienstleistungen` - IT services
+- `Entwicklung, Programmierung und Implementierung von Software` - Software development
+- `Hosting-Dienste, Software as a Service [SaaS] und Vermietung von Software` - Hosting/SaaS
 
 ### Options Object (Optional)
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `acceleratedExamination` | boolean | false | Request accelerated examination (+€200) |
+| `acceleratedExamination` | boolean | false | Request accelerated examination (+200 EUR) |
 | `certificationMark` | boolean | false | Register as certification mark |
 | `licensingDeclaration` | boolean | false | Include licensing willingness declaration |
 | `saleDeclaration` | boolean | false | Include sale willingness declaration |
 
 ### SEPA Details Object (Required for SEPA payment)
 
+**Note:** Requires a valid SEPA mandate (A9530 form) to be on file with DPMA.
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `iban` | string | Yes | Bank account IBAN |
-| `bic` | string | Yes | Bank BIC/SWIFT code |
-| `accountHolder` | string | Yes | Account holder name |
+| `mandateReferenceNumber` | string | Yes | SEPA mandate reference number |
+| `mandateType` | string | Yes | `"permanent"` or `"single"` |
+| `copyFromApplicant` | boolean | No | Copy contact from applicant |
+| `contact` | object | Conditional | SEPA contact (required if not copying) |
 
 ## Response Format
 
@@ -270,7 +373,7 @@ You can specify terms in two ways:
 {
   "success": true,
   "requestId": "550e8400-e29b-41d4-a716-446655440000",
-  "timestamp": "2025-12-18T12:41:05.000Z",
+  "timestamp": "2025-12-19T12:41:05.000Z",
   "data": {
     "aktenzeichen": "302025261416.4",
     "drn": "2025121812410513WA",
@@ -294,12 +397,14 @@ You can specify terms in two ways:
         "reference": "302025261416.4"
       }
     },
-    "receipt": {
-      "filename": "W7005-01.PDF",
-      "mimeType": "application/octet-stream",
-      "dataBase64": "JVBERi0xLjQK..."
-    },
-    "receiptFilePath": "/path/to/receipts/302025261416_4_W7005-01.PDF"
+    "documents": [
+      {
+        "filename": "W7005-01.PDF",
+        "mimeType": "application/pdf",
+        "dataBase64": "JVBERi0xLjQK..."
+      }
+    ],
+    "receiptFilePath": "/path/to/receipts/302025261416_4_documents.zip"
   }
 }
 ```
@@ -314,8 +419,8 @@ You can specify terms in two ways:
 | `submissionTime` | ISO 8601 timestamp of submission |
 | `fees` | Array of applicable fees |
 | `payment.bankDetails` | Bank transfer details (use `aktenzeichen` as reference!) |
-| `receipt` | Base64-encoded PDF receipt |
-| `receiptFilePath` | Local file path where receipt PDF was saved |
+| `documents` | Array of Base64-encoded documents from ZIP |
+| `receiptFilePath` | Local file path where ZIP archive was saved |
 
 ### Error Response (HTTP 400/500)
 
@@ -323,7 +428,7 @@ You can specify terms in two ways:
 {
   "success": false,
   "requestId": "550e8400-e29b-41d4-a716-446655440000",
-  "timestamp": "2025-12-18T12:00:00.000Z",
+  "timestamp": "2025-12-19T12:00:00.000Z",
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "Request validation failed",
@@ -342,15 +447,15 @@ You can specify terms in two ways:
 | `VALIDATION_ERROR` | Request validation failed (check `details` array) |
 | `SESSION_ERROR` | Failed to establish session with DPMA |
 | `SUBMISSION_ERROR` | Form submission failed |
-| `UNKNOWN_ERROR` | Unexpected error occurred |
+| `INTERNAL_ERROR` | Unexpected error occurred |
 
 ## Fees
 
 | Description | Amount |
 |-------------|--------|
-| Base fee (1-3 classes, electronic filing) | €290 |
-| Each additional class (4+) | €100 |
-| Accelerated examination (optional) | €200 |
+| Base fee (1-3 classes, electronic filing) | 290 EUR |
+| Each additional class (4+) | 100 EUR |
+| Accelerated examination (optional) | 200 EUR |
 
 ## Nice Classification Reference
 
@@ -379,18 +484,19 @@ The Nice Classification divides goods and services into 45 classes:
 ```
 dpma/
 ├── src/
-│   ├── index.ts              # Application entry point
-│   ├── comprehensive-test.ts # Test suite for all scenarios
+│   ├── index.ts                 # Application entry point
+│   ├── comprehensive-test.ts    # Test suite for all scenarios
+│   ├── test-combined-mark.ts    # Word mark test script
 │   ├── api/
-│   │   └── server.ts         # Express server & routes
+│   │   └── server.ts            # Express server & routes
 │   ├── client/
-│   │   └── DPMAClient.ts     # DPMA HTTP client
+│   │   └── DPMAClient.ts        # DPMA HTTP client
 │   ├── types/
-│   │   └── dpma.ts           # TypeScript type definitions
+│   │   └── dpma.ts              # TypeScript type definitions
 │   └── validation/
-│       └── validateRequest.ts # Request validation
-├── receipts/                  # Downloaded receipt PDFs (auto-created)
-├── debug/                     # Debug files when DEBUG=true (auto-created)
+│       └── validateRequest.ts   # Request validation
+├── receipts/                     # Downloaded ZIP archives (auto-created)
+├── debug/                        # Debug files when DEBUG=true (auto-created)
 ├── package.json
 ├── tsconfig.json
 └── README.md
@@ -406,17 +512,19 @@ dpma/
 
 ## Important Notes
 
-1. **Real Submissions**: This API submits REAL trademark applications to DPMA. Each submission incurs real fees (minimum €290).
+1. **Real Submissions**: This API submits REAL trademark applications to DPMA. Each submission incurs real fees (minimum 290 EUR).
 
 2. **Payment Deadline**: After submission, payment must be made within **3 months** using the provided bank details and the `aktenzeichen` as payment reference. Failure to pay results in automatic withdrawal of the application.
 
-3. **Receipt Storage**: Receipt PDFs are automatically saved to the `receipts/` folder with the format `{aktenzeichen}_{filename}.pdf`.
+3. **Receipt Storage**: Receipt ZIP archives are automatically saved to the `receipts/` folder with the format `{aktenzeichen}_documents.zip`.
 
 4. **Debug Mode**: When `DEBUG=true`, detailed logs are output and response XMLs are saved to the `debug/` folder for troubleshooting.
 
-5. **Nice Classes**: The API supports three modes for Nice class term selection: selecting the entire class header, selecting specific individual terms by name, or defaulting to the first available term group. See the Nice Classes Array section for details.
+5. **Nice Class Terms**: Terms must use the exact German names as shown in the DPMA form. The API searches for terms and selects matching checkboxes.
 
-6. **Image Trademarks**: All trademark types are fully supported: word marks (`type: "word"`), figurative/image marks (`type: "figurative"`), and combined marks (`type: "combined"`).
+6. **Image Trademarks**: Currently word marks are fully supported. Image and combined marks require image upload which is partially implemented.
+
+7. **Delivery Address**: By default, the applicant's address is used. Set `deliveryAddress` with a different address if needed.
 
 ## Testing
 
