@@ -140,16 +140,18 @@ export function validateTrademarkRequest(request: unknown): ValidationResult {
   }
 
   // ============================================================================
-  // Validate Sanctions Declaration
+  // Validate Sanctions Declaration (only required for Natural Persons)
   // ============================================================================
-  if (!req.sanctions) {
-    errors.push({ field: 'sanctions', message: 'Sanctions declaration is required' });
-  } else {
-    if (typeof req.sanctions.hasRussianNationality !== 'boolean') {
-      errors.push({ field: 'sanctions.hasRussianNationality', message: 'Russian nationality declaration must be a boolean' });
-    }
-    if (typeof req.sanctions.hasRussianResidence !== 'boolean') {
-      errors.push({ field: 'sanctions.hasRussianResidence', message: 'Russian residence declaration must be a boolean' });
+  if (req.applicant?.type === ApplicantType.NATURAL) {
+    if (!req.sanctions) {
+      errors.push({ field: 'sanctions', message: 'Sanctions declaration is required for natural persons' });
+    } else {
+      if (typeof req.sanctions.hasRussianNationality !== 'boolean') {
+        errors.push({ field: 'sanctions.hasRussianNationality', message: 'Russian nationality declaration must be a boolean' });
+      }
+      if (typeof req.sanctions.hasRussianResidence !== 'boolean') {
+        errors.push({ field: 'sanctions.hasRussianResidence', message: 'Russian residence declaration must be a boolean' });
+      }
     }
   }
 

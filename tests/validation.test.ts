@@ -499,21 +499,40 @@ describe('validateTrademarkRequest', () => {
   });
 
   describe('Sanctions Validation', () => {
-    it('should require sanctions declaration', () => {
+    it('should require sanctions declaration for natural persons', () => {
       const req = createValidRequest();
       delete (req as any).sanctions;
       const result = validateTrademarkRequest(req);
       expect(result.errors.some(e => e.field === 'sanctions')).toBe(true);
     });
 
-    it('should require hasRussianNationality to be boolean', () => {
+    it('should NOT require sanctions declaration for legal entities', () => {
+      const req = createValidRequest();
+      req.applicant = {
+        type: ApplicantType.LEGAL,
+        companyName: 'Test GmbH',
+        legalForm: 'GmbH',
+        address: {
+          street: 'Industriestr. 1',
+          zip: '10115',
+          city: 'Berlin',
+          country: 'DE',
+        },
+      };
+      delete (req as any).sanctions;
+      const result = validateTrademarkRequest(req);
+      expect(result.valid).toBe(true);
+      expect(result.errors.some(e => e.field === 'sanctions')).toBe(false);
+    });
+
+    it('should require hasRussianNationality to be boolean for natural persons', () => {
       const req = createValidRequest();
       (req.sanctions as any).hasRussianNationality = 'no';
       const result = validateTrademarkRequest(req);
       expect(result.errors.some(e => e.field === 'sanctions.hasRussianNationality')).toBe(true);
     });
 
-    it('should require hasRussianResidence to be boolean', () => {
+    it('should require hasRussianResidence to be boolean for natural persons', () => {
       const req = createValidRequest();
       (req.sanctions as any).hasRussianResidence = 'no';
       const result = validateTrademarkRequest(req);
